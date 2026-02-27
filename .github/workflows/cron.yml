@@ -1,0 +1,33 @@
+name: Scheduled Task
+
+on:
+  schedule:
+    - cron: '0 22 * * *'   # 每天 UTC 00:00 执行
+  workflow_dispatch:       # 允许手动触发
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+
+      - name: Install deps
+        run: npm install
+
+      - name: Run script
+        run: node index.js
+
+      - name: Commit & Push if changed
+        run: |
+          git config --global user.name "github-actions"
+          git config --global user.email "github-actions@github.com"
+          git add .
+          git diff --quiet && git diff --staged --quiet || git commit -m "auto update"
+          git push

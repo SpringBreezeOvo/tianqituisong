@@ -1,0 +1,8 @@
+# 忽略敏感配置文件（本地测试用，不上传）
+.env
+
+# 忽略依赖包（因为 GitHub Actions 会根据 package.json 自动安装，没必要上传这几万个文件）
+node_modules/
+
+# 忽略日志文件
+*.log

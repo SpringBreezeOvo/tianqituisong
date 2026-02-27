@@ -22,7 +22,7 @@ jobs:
         run: npm install
 
       - name: Run script
-        run: node index.js
+        run: node deepseek_tianqi.js
 
       - name: Commit & Push if changed
         run: |

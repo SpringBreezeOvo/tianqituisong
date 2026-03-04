@@ -12,13 +12,58 @@ const CITIES = [
     { name: '济宁', id: '101120701' }
 ];
 
+// 询问 DeepSeek 天气情况的函数
+async function askDeepSeekWeather(cityNames) {
+    try {
+        console.log('正在询问 DeepSeek 天气情况...');
+        const cityList = cityNames.join('、');
+        const todayStr = new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' });
+
+        const weatherPrompt = `请告诉我今天（${todayStr}）${cityList}这两个城市的详细天气情况，包括：
+1. 天气状况（晴天、多云、雨天等）
+2. 温度范围
+3. 湿度、风力等详细信息
+4. 是否有降水或异常天气
+5. 出行建议
+
+请以客观、详细的方式描述，直接给出天气信息，不要添加多余的解释。`;
+
+        const deepseekRes = await fetch('https://api.deepseek.com/chat/completions', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${DEEPSEEK_API_KEY}`
+            },
+            body: JSON.stringify({
+                model: 'deepseek-chat',
+                messages: [
+                    { role: 'system', content: '你是一个专业的天气信息提供者，能够准确描述天气情况。' },
+                    { role: 'user', content: weatherPrompt }
+                ],
+                temperature: 0.3 // 较低温度，保证准确性
+            })
+        });
+
+        const deepseekData = await deepseekRes.json();
+
+        if (!deepseekData.choices || !deepseekData.choices[0]) {
+            throw new Error('DeepSeek 天气查询异常: ' + JSON.stringify(deepseekData));
+        }
+
+        return deepseekData.choices[0].message.content.trim();
+    } catch (error) {
+        console.error('询问 DeepSeek 天气出错:', error);
+        return null;
+    }
+}
+
 async function getWeatherAndPushWithAI() {
     try {
         let weatherInfoRaw = '';
         let hasRain = false;
 
         console.log('正在获取和风天气的基础数据...');
-        // 1. 获取原生的天气数据
+        // 1. 获取和风天气的原生数据
         for (const city of CITIES) {
             const weatherUrl = `https://devapi.qweather.com/v7/weather/3d?location=${city.id}&key=${WEATHER_API_KEY}`;
             const weatherRes = await fetch(weatherUrl);
@@ -55,17 +100,28 @@ async function getWeatherAndPushWithAI() {
             }
         }
 
-        console.log('天气数据获取完毕，正在请求 DeepSeek 进行 AI 润色排版...');
+        // 2. 同时询问 DeepSeek 天气情况（作为补充数据源）
+        const cityNames = CITIES.map(c => c.name);
+        const deepseekWeatherInfo = await askDeepSeekWeather(cityNames);
 
-        // 2. 调用 DeepSeek 接口生成贴心的文案
+        console.log('天气数据获取完毕，正在结合多平台数据请求 DeepSeek 进行 AI 润色排版...');
+
+        // 3. 结合多平台数据，调用 DeepSeek 接口生成贴心的文案
         const todayStr = new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' });
+
+        // 构建综合天气数据
+        let combinedWeatherData = `【和风天气数据源】\n${weatherInfoRaw}\n`;
+        if (deepseekWeatherInfo) {
+            combinedWeatherData += `\n【DeepSeek 天气分析】\n${deepseekWeatherInfo}\n`;
+        }
+
         const prompt = `
-请你扮演一个深情、细心、温柔的完美男友，根据我下面提供的【今日真实天气数据】，帮我写一段发给女朋友的早晨微信问候消息。
+请你扮演一个深情、细心、温柔的完美男友，根据我下面提供的【多平台综合天气数据】，帮我写一段发给女朋友的早晨微信问候消息。
 她目前关注的城市是【济宁】和【济南】女朋友在济宁 目前是异地。
 当前时间是：${todayStr}
 
 要求：
-1. 语气必须极度宠溺、自然，千万不能有任何“人工智障”的机器味。可以用“宝宝”、“乖乖”、“公主”等甜甜的称呼。
+1. 语气必须极度宠溺、自然，千万不能有任何"人工智障"的机器味。可以用"宝宝"、"乖乖"、"公主"等甜甜的称呼。
 2. 根据天气情况，给出贴心的穿衣或出行建议。
 3. 如果下雨，下雪或者异常天气（重要关注点），一定要多嘱咐几句让她带伞，别淋湿了，和安全注意事项。
 4. 结尾加一句甜甜的情话作为早安的收尾，比如有多想她之类的话。
@@ -74,9 +130,11 @@ async function getWeatherAndPushWithAI() {
 7. 完整展示济南和济宁的天气详细情况 换行展示（这个不需要按照第6条直接展示获取的天气数据）
 8. 【最重要】你的回答必须严格分为两部分。第一部分是一行不超过 15 个字的情侣早安短标题（需包含 Emoji，如果是雨雪天必须在标题里加急提醒）；从第二行开始是正文内容。
 9. 【特别要求】现在是一次全新的对话，你不拥有任何历史记忆，请给我一份独一无二的有创意的文案，绝对不能和以往说的话雷同。
+10. 【数据融合】请综合参考和风天气数据和 DeepSeek 天气分析，确保信息的准确性和全面性。
+11. 【禁止虚构共同记忆】穿衣、出行建议要通用贴心，但不要编造“像两人共同经历过的”具体细节，例如：具体某件衣服（如“那件米白色针织开衫”）、某次视频/见面场景（如“上次视频里你配牛仔裤”）。不说“那件”“上次视频里”“上次见面时”这类暗示有共同历史的说法。
 
-今日真实天气数据（必须基于这个客观数据来写提醒，不要自己瞎编天气）：
-${weatherInfoRaw}
+多平台综合天气数据（必须基于这些客观数据来写提醒，不要自己瞎编天气）：
+${combinedWeatherData}
 `;
 
         const deepseekRes = await fetch('https://api.deepseek.com/chat/completions', {
@@ -119,7 +177,7 @@ ${weatherInfoRaw}
         console.log(`生成的标题: ${finalTitle}`);
         console.log('DeepSeek 润色生动问候语完成，准备通过 Server酱 推送...');
 
-        // 3. 调用 Server酱 API 推送经 AI 润色后的消息
+        // 4. 调用 Server酱 API 推送经 AI 润色后的消息
         // 如果环境变量里有多个 KEY（逗号分隔），将其拆分成数组
         const sendKeys = SERVER_CHAN_SENDKEY.split(',').map(k => k.trim()).filter(Boolean);
 
